@@ -9,6 +9,14 @@ export function isoDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+// Parse YYYY-MM-DD as local midnight. `new Date('2026-10-05')` is UTC midnight,
+// which isoDate (local getters) reads back as the previous day anywhere west
+// of UTC — week navigation then drifts a day per click.
+export function parseIsoDate(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 export function addDays(d: Date, days: number): Date {
   const copy = new Date(d)
   copy.setDate(copy.getDate() + days)

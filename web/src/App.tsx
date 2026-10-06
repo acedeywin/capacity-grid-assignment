@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { CapacityGrid } from './CapacityGrid'
-import { addDays, isoDate, snapToMonday } from './dates'
+import { addDays, isoDate, parseIsoDate, snapToMonday } from './dates'
 
 // Default range: the week containing today plus three following weeks.
 // Managers almost always want "this week forward", not "last month".
@@ -14,8 +14,8 @@ export function App() {
 
   // Keyboard-friendly week nav: shift both bounds by seven days together.
   const shiftWeeks = (weeks: number) => {
-    setFrom(isoDate(addDays(new Date(from), weeks * 7)))
-    setTo(isoDate(addDays(new Date(to), weeks * 7)))
+    setFrom(isoDate(addDays(parseIsoDate(from), weeks * 7)))
+    setTo(isoDate(addDays(parseIsoDate(to), weeks * 7)))
   }
 
   return (
@@ -35,7 +35,10 @@ export function App() {
           <input
             type="date"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            required
+            // A cleared native date input reports ''; keep the last real date
+            // rather than requesting from= and breaking week navigation.
+            onChange={(e) => e.target.value && setFrom(e.target.value)}
           />
         </label>
         <label>
@@ -43,7 +46,8 @@ export function App() {
           <input
             type="date"
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            required
+            onChange={(e) => e.target.value && setTo(e.target.value)}
           />
         </label>
 
