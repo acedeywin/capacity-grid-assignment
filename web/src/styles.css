@@ -83,6 +83,16 @@ tr.row-error td {
   color: crimson;
 }
 
+/* Previous range kept on screen while the next one loads. */
+table.stale {
+  opacity: 0.6;
+  transition: opacity 120ms;
+}
+
+.status {
+  margin: 0 0 0.5rem;
+}
+
 input[type='number'] {
   width: 4.5rem;
   padding: 0.2rem 0.4rem;
