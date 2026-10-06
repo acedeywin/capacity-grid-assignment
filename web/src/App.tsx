@@ -1,17 +1,58 @@
+import { useState } from 'react'
 import { CapacityGrid } from './CapacityGrid'
+import { addDays, isoDate, snapToMonday } from './dates'
 
-// The range the grid loads. Widen it if you want to see more.
-const FROM = '2025-12-29'
-const TO = '2026-01-16'
+// Default range: the week containing today plus three following weeks.
+// Managers almost always want "this week forward", not "last month".
+const today = snapToMonday(new Date())
+const DEFAULT_FROM = isoDate(today)
+const DEFAULT_TO = isoDate(addDays(today, 27))
 
 export function App() {
+  const [from, setFrom] = useState(DEFAULT_FROM)
+  const [to, setTo] = useState(DEFAULT_TO)
+
+  // Keyboard-friendly week nav: shift both bounds by seven days together.
+  const shiftWeeks = (weeks: number) => {
+    setFrom(isoDate(addDays(new Date(from), weeks * 7)))
+    setTo(isoDate(addDays(new Date(to), weeks * 7)))
+  }
+
   return (
     <main>
       <h1>Team capacity</h1>
-      <p className="range">
-        {FROM} to {TO}
-      </p>
-      <CapacityGrid from={FROM} to={TO} />
+
+      <div className="toolbar">
+        <button type="button" onClick={() => shiftWeeks(-1)} aria-label="Previous week">
+          ← Prev week
+        </button>
+        <button type="button" onClick={() => shiftWeeks(1)} aria-label="Next week">
+          Next week →
+        </button>
+
+        <label>
+          From
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+          />
+        </label>
+        <label>
+          To
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+          />
+        </label>
+
+        <span className="range">
+          {from} to {to}
+        </span>
+      </div>
+
+      <CapacityGrid from={from} to={to} />
     </main>
   )
 }

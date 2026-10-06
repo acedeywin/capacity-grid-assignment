@@ -19,6 +19,26 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.toolbar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0.5rem 0 1.25rem;
+  flex-wrap: wrap;
+}
+
+.toolbar label {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.toolbar button {
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+}
+
 table {
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
@@ -29,4 +49,41 @@ td {
   border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   padding: 0.5rem 0.75rem;
   text-align: left;
+}
+
+td.cell {
+  text-align: right;
+  min-width: 4.5rem;
+}
+
+/* Three-state over-allocation styling. Kept inside the cell so the row header
+ * (the person's name) is never recoloured — easier to scan down the list. */
+td.cell.ok {
+  background: color-mix(in srgb, currentColor 3%, transparent);
+}
+td.cell.near {
+  background: color-mix(in srgb, orange 25%, transparent);
+}
+td.cell.over {
+  background: color-mix(in srgb, crimson 35%, transparent);
+  font-weight: 600;
+}
+
+tr.row-error td {
+  background: color-mix(in srgb, crimson 10%, transparent);
+  font-size: 0.9rem;
+}
+
+.muted {
+  opacity: 0.55;
+  font-size: 0.8rem;
+}
+
+.error {
+  color: crimson;
+}
+
+input[type='number'] {
+  width: 4.5rem;
+  padding: 0.2rem 0.4rem;
 }
