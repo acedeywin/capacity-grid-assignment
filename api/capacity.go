@@ -24,10 +24,10 @@ type capacityResponse struct {
 }
 
 type personCapacity struct {
-	ID           int       `json:"id"`
-	Name         string    `json:"name"`
-	WeeklyHours  float64   `json:"weekly_hours"`
-	Allocated    []float64 `json:"allocated"`
+	ID          int       `json:"id"`
+	Name        string    `json:"name"`
+	WeeklyHours float64   `json:"weekly_hours"`
+	Allocated   []float64 `json:"allocated"`
 }
 
 // handleCapacity serves GET /api/capacity?from=YYYY-MM-DD&to=YYYY-MM-DD.
@@ -54,74 +54,95 @@ func (s *server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// One pass over assignments, bucketed by week in Postgres. Index on
-	// (start_date, end_date) carries the overlap predicate; the aggregation
-	// stays in-engine.
+	// Assignments are narrowed to the requested range first (the
+	// (start_date, end_date) index can serve this for narrow ranges), then each
+	// is expanded into the weeks it overlaps. Allocation is summed per
+	// (person, week) and joined onto people × weeks so every cell exists.
+	// Overlap is inclusive on both ends, hence the + 1.
 	const query = `
 WITH weeks AS (
   SELECT generate_series($1::date, $2::date, interval '7 days')::date AS week_start
 ),
+in_range AS (
+  SELECT person_id, start_date, end_date, hours_per_day
+  FROM assignments
+  WHERE start_date <= $2::date
+    AND end_date   >= $1::date
+),
 cells AS (
+  -- Expand each assignment into only the weeks it overlaps (Mondays, clipped
+  -- to the range), rather than testing every assignment against every week.
   SELECT
-    p.id AS person_id,
-    w.week_start,
-    COALESCE(SUM(
-      GREATEST(
-        0,
-        (LEAST(a.end_date,   w.week_start + 6)::date
-         - GREATEST(a.start_date, w.week_start)::date
-         + 1)
-      ) * a.hours_per_day
-    ), 0)::float8 AS allocated
-  FROM people p
-  CROSS JOIN weeks w
-  LEFT JOIN assignments a
-    ON a.person_id = p.id
-   AND a.start_date <= w.week_start + 6
-   AND a.end_date   >= w.week_start
-  GROUP BY p.id, w.week_start
+    a.person_id,
+    wk.week_start,
+    SUM(
+      (LEAST(a.end_date, wk.week_start + 6) - GREATEST(a.start_date, wk.week_start) + 1)
+      * a.hours_per_day
+    ) AS allocated
+  FROM in_range a
+  CROSS JOIN LATERAL (
+    SELECT generate_series(
+      date_trunc('week', GREATEST(a.start_date, $1::date)),
+      LEAST(a.end_date, $2::date),
+      interval '7 days'
+    )::date AS week_start
+  ) wk
+  GROUP BY a.person_id, wk.week_start
 )
 SELECT
   p.id,
   p.name,
   p.weekly_hours::float8,
-  array_agg(c.allocated   ORDER BY c.week_start) AS allocated,
-  array_agg(c.week_start  ORDER BY c.week_start) AS weeks
+  array_agg(COALESCE(c.allocated, 0)::float8 ORDER BY w.week_start) AS allocated
 FROM people p
-JOIN cells c ON c.person_id = p.id
+CROSS JOIN weeks w
+LEFT JOIN cells c ON c.person_id = p.id AND c.week_start = w.week_start
 GROUP BY p.id, p.name, p.weekly_hours
 ORDER BY p.name, p.id;
 `
 
-	rows, err := s.db.Query(r.Context(), query, weekStart, weekEnd)
+	// The planner can't estimate the lateral generate_series, guesses 1000
+	// rows per assignment, and the inflated cost trips JIT compilation —
+	// ~250ms of compile for a query that runs in under 100ms at 104 weeks.
+	// Scoped to this transaction, not the server.
+	tx, err := s.db.Begin(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		internalError(w, "capacity begin", err)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if _, err := tx.Exec(r.Context(), `SET LOCAL jit = off`); err != nil {
+		internalError(w, "capacity jit", err)
+		return
+	}
+
+	rows, err := tx.Query(r.Context(), query, weekStart, weekEnd)
+	if err != nil {
+		internalError(w, "capacity query", err)
 		return
 	}
 	defer rows.Close()
 
-	var people []personCapacity
-	var weekDates []time.Time
+	// Non-nil so an empty roster encodes as [] rather than null.
+	people := []personCapacity{}
 	for rows.Next() {
 		var p personCapacity
-		var rowWeeks []time.Time
-		if err := rows.Scan(&p.ID, &p.Name, &p.WeeklyHours, &p.Allocated, &rowWeeks); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if err := rows.Scan(&p.ID, &p.Name, &p.WeeklyHours, &p.Allocated); err != nil {
+			internalError(w, "capacity scan", err)
 			return
-		}
-		if weekDates == nil {
-			weekDates = rowWeeks
 		}
 		people = append(people, p)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		internalError(w, "capacity rows", err)
 		return
 	}
 
-	weekStrs := make([]string, len(weekDates))
-	for i, d := range weekDates {
-		weekStrs[i] = d.Format("2006-01-02")
+	// Weeks come from the snapped range, not from the first row, so they are
+	// present even when there are no people.
+	weekStrs := make([]string, 0, weeks)
+	for d := weekStart; !d.After(weekEnd); d = d.AddDate(0, 0, 7) {
+		weekStrs = append(weekStrs, d.Format("2006-01-02"))
 	}
 
 	writeJSON(w, http.StatusOK, capacityResponse{

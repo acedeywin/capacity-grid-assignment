@@ -57,7 +57,7 @@ func (s *server) handleUpdatePerson(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "person not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		internalError(w, "update person", err)
 		return
 	}
 

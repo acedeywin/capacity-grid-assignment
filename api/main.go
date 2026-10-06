@@ -64,3 +64,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// internalError logs the underlying error and returns a generic 500, so
+// database details don't leak to the client.
+func internalError(w http.ResponseWriter, op string, err error) {
+	log.Printf("%s: %v", op, err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
+}
